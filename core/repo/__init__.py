@@ -1,0 +1,1 @@
+"""Repository scanning, symbol extraction and keyword search (Phase 1)."""
