@@ -1,0 +1,35 @@
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Secrets and local config (NEVER commit)
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Tool caches
+.pytest_cache/
+.ruff_cache/
+
+# Generated data: indexes and databases (rebuildable)
+data/indexes/
+*.faiss
+*.index
+*.db
+*.sqlite
+*.sqlite3
+
+# Git merge leftovers and OS/editor noise
+*.orig
+*.rej
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
