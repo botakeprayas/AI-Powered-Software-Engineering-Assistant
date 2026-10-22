@@ -1,0 +1,1 @@
+"""Core logic: settings now; parsing, indexing and search in later phases."""
