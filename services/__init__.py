@@ -1,0 +1,1 @@
+"""Wrappers for external systems (LLM, embeddings) added in later phases."""
