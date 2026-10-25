@@ -1,0 +1,1 @@
+"""Dependency graph and cross-file reasoning (Phase 4)."""
