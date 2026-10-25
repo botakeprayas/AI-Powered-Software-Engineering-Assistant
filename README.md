@@ -104,3 +104,28 @@ Modes: `--mode keyword | semantic | hybrid` (default hybrid; keyword needs no mo
 - No minimum-relevance cutoff: semantic search always returns top-k, so weak matches (cos < ~0.25) are noise. Check the cosine score.
 - Test functions are indexed and can outrank production code; no filter yet.
 - Each CLI run pays ~15 s for importing PyTorch and loading the model; the UI should keep the model loaded.
+
+**Current phase:** 3 (repository-aware chat) on top of Phases 0-2.
+
+## Phase 3: Repository-aware chat (local LLM via Ollama)
+
+Run: `streamlit run app/main.py`, then open **Chat** in the sidebar. CLI: `python scripts\ask.py --repo data\sample_repo --question "How does checkout work?" --mock`.
+
+### Decisions
+- One LLM service (`services/llm_service.py`) behind the `LLMService` interface. Providers: `OllamaLLM` (real, local, no API key) and `MockLLM` (clearly labeled fake for tests). URL and model come from `.env`.
+- Workflow: hybrid retrieval (Phase 2) -> relevance gate -> prompt -> LLM -> parse and validate.
+- The model cites evidence IDs (`[E1]`). The app maps IDs to the indexed `file:start-end`, so locations cannot be invented. Unknown IDs are removed. Uncited statements are dropped.
+- Prompt separates FACTS, INFERENCES and UNKNOWNS and treats code excerpts as untrusted data (prompt-injection defense).
+- Abstention happens before the model (no relevant evidence), in the model (STATUS: INSUFFICIENT_EVIDENCE) and after it (no valid citation).
+- Retries with exponential backoff for connection errors, timeouts and HTTP 5xx/429. Missing model and bad requests are not retried.
+- `num_ctx` is sent explicitly so the rules at the start of the prompt are never silently cut off.
+- Ollama calls bypass Windows proxy settings when the host is localhost.
+
+### Known limitations (Phase 3)
+- The relevance thresholds (`QA_MIN_COSINE`, `QA_MIN_KEYWORD_SCORE`) are heuristics. Tune them with `scripts\ask.py --scores`.
+- A question that is topically close to the code can pass the gate; the model then has to abstain, and small models do not always do so.
+- Each question is answered on its own; follow-ups that depend on earlier turns are not resolved.
+- Small models (3B) may ignore the output format. Such answers are rejected, not shown.
+- Class excerpts can duplicate their methods' code, which wastes evidence budget.
+- Python files only. If `OLLAMA_BASE_URL` points to another computer, code excerpts leave this machine.
+- Answers have not been evaluated beyond the sample repository.
