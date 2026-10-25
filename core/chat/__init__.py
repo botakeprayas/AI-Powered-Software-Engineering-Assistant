@@ -1,0 +1,1 @@
+"""Repository-aware chat: retrieval, prompting, citation checking (Phase 3)."""
