@@ -129,3 +129,30 @@ Run: `streamlit run app/main.py`, then open **Chat** in the sidebar. CLI: `pytho
 - Class excerpts can duplicate their methods' code, which wastes evidence budget.
 - Python files only. If `OLLAMA_BASE_URL` points to another computer, code excerpts leave this machine.
 - Answers have not been evaluated beyond the sample repository.
+
+## Phase 4: Dependency graph (Part 1: graph and CLI)
+
+Run: `python scripts\graph.py data\graph_sample --callees OrderService.checkout`
+Other options: `--callers NAME`, `--uncertain`, `--edges`, `--limitations`.
+
+### What it does
+- Parses Python files with `ast` (code is never executed) and builds a NetworkX `MultiDiGraph`.
+- Nodes: files, functions, classes, external modules, and `unresolved` placeholders.
+- Edges: `imports`, `defines`, `calls`. Every edge stores `kind`, `certainty`, `file`, `line` and a `reason`.
+- Symbol ids reuse the Phase 1 keys (`file::qualname`), so the graph lines up with the search index.
+
+### Decisions
+- Each edge is `confirmed` (resolved from the code text) or `uncertain` (cannot be proven).
+- Uncertain calls point to an `unresolved` node. Possible targets are stored as candidates and are never drawn as real edges.
+- Confirmed cases: names defined or imported in the file (including re-exports), `self.method()` inside its class, `ClassName.method()`, and `x.method()` when `x = ClassName(...)` is assigned once.
+- Uncertain cases: parameters and unknown receivers, `getattr`, `importlib`, `eval`/`exec`/`__import__`, star imports, ambiguous names, `super()`.
+- Calls to builtins, the standard library and third-party packages are counted but not recorded.
+- Caller and callee lookups use confirmed edges only. Possible callers are listed separately and labeled "NOT confirmed".
+
+### Known limitations (Phase 4)
+- Python only. Inheritance is not resolved. Attributes set in `__init__` are not tracked (`self.gateway.charge()` stays uncertain).
+- Nested functions are not nodes. Their calls count for the enclosing function.
+- Calls made by frameworks, threads or callbacks cannot be seen.
+- A missing edge does not prove that no call exists. Run `--limitations` for the full list.
+- Verified so far on `data/graph_sample` only: 15 symbols, 43 edges (12 confirmed calls, 4 uncertain calls, 15 defines, 12 imports).
+- Not built yet: graph-expanded retrieval for chat, the dependency visualization, and the Phase 4 tests (Part 2).
