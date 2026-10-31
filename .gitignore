@@ -33,3 +33,5 @@ data/indexes/
 Thumbs.db
 .vscode/
 .idea/
+# Evaluation logs (may contain questions)
+data/logs/
