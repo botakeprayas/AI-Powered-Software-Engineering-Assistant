@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "demo.py", line 3, in <module>
+    print(summary([]))
+  File "cart/checkout.py", line 7, in summary
+    average = average_price(items)
+  File "cart/pricing.py", line 7, in average_price
+    return total / len(items)
+ZeroDivisionError: division by zero
