@@ -156,3 +156,105 @@ Other options: `--callers NAME`, `--uncertain`, `--edges`, `--limitations`.
 - A missing edge does not prove that no call exists. Run `--limitations` for the full list.
 - Verified so far on `data/graph_sample` only: 15 symbols, 43 edges (12 confirmed calls, 4 uncertain calls, 15 defines, 12 imports).
 - Not built yet: graph-expanded retrieval for chat, the dependency visualization, and the Phase 4 tests (Part 2).
+
+### Phase 4, part 2: graph-expanded retrieval and visualization
+
+Run: `streamlit run app/main.py`, then open **Dependencies** and **Graph chat**. CLI: `python scripts\ask_graph.py --repo data\graph_sample --question "What does OrderService.checkout call?" --mock`.
+
+- After hybrid retrieval and the Phase 3 relevance gate, the code's confirmed callers and callees are added (`GraphQAEngine`, a subclass of the Phase 3 `QAEngine`). Defaults: depth 1, 2 per direction, 4 added, 3 seeds, 11,000 characters (`GRAPH_EXPAND_*` in `.env`).
+- Each added excerpt records why: `callee of E1 (confirmed: OrderService.checkout calls apply_tax at orders/service.py:18)`.
+- Only confirmed edges are followed. Uncertain relationships and module-level callers become notes the model must report as unknowns. Notes cannot be cited.
+- The graph never rescues an irrelevant question: with no relevant retrieved code, the answer abstains before the model is called.
+- If expansion fails, the answer is built from search results only, with a warning.
+- Visualization uses matplotlib (offline, static): files are columns, solid arrows are confirmed calls, dashed arrows are uncertain calls ending in an unresolved box.
+
+### Known limitations (Phase 4, part 2)
+- The graph is built when you press the button and is not refreshed after edits. Rebuild it.
+- Graph-added excerpts have no retrieval scores, so the Phase 5 "strong evidence" rule does not count them.
+- Expansion follows calls only, not imports, inheritance or data flow.
+- A missing relationship is not proof that no call exists.
+- Tested on the `graph_sample` repository only.
+
+## Phase 5: Evidence-first answer validation
+
+Run: `streamlit run app/main.py`, then open **Validated chat**. CLI: `python scripts\ask_validated.py --repo data\sample_repo --question "How does checkout work?"`. Count results with `python scripts\eval_log_summary.py`.
+
+### What it does
+- Re-checks every citation against the currently indexed repository: the file is indexed, the range exists, the index lists that symbol there, and the file text still matches (`valid`, `stale`, `missing`, `out_of_range`).
+- Checks `file:line` locations the model wrote itself (it is told not to): `ok`, `ungrounded`, or `invalid` (invented).
+- Checks each claim against the code it cites: rules (code names the claim mentions must appear in the cited code) plus one batched LLM-as-judge call (`SUPPORTED`, `PARTIAL`, `NOT_SUPPORTED`).
+- Applies a configurable evidence policy (`VALIDATION_*` in `.env`) and turns every failed rule into an explicit limitation. Levels are `sufficient`, `limited`, `insufficient`.
+- Writes one JSONL record per question (`EVAL_LOG_PATH`) so citation correctness and unsupported claims can be counted later.
+
+### Final verdict for a claim
+| Citations | Judge | Rules | Final |
+|---|---|---|---|
+| invalid or invented | any | any | unsupported |
+| valid | NOT_SUPPORTED | any | unsupported |
+| valid | SUPPORTED | a named code item is missing | weak |
+| valid | other or none | a named code item is missing | unsupported |
+| valid | PARTIAL | other | weak |
+| valid | SUPPORTED | other | supported |
+| valid | none | pass | supported (rules only) |
+| valid | none | word overlap low | weak |
+| valid | none | nothing checkable | unchecked |
+
+### Decisions
+- Validation wraps the Phase 3 `QAEngine`; Phase 3 code is unchanged.
+- Levels are rule outcomes, never probabilities. Model confidence is not shown, because it is not calibrated.
+- Only files that appear in the index are opened, so skipped sensitive files are never read.
+- Logs store a code hash and length, not code (`EVAL_LOG_CODE=on` changes that). `data/logs/` is git-ignored.
+
+### Known limitations (Phase 5)
+- "Supported" means no problem was found by these checks, not that the claim is correct.
+- Name and word overlap cannot detect wrong logic: "never calls charge" passes if `charge` appears in the code.
+- The judge is the same kind of fallible model as the answerer, sees only the cited excerpts, and is weak at negation and cross-file reasoning.
+- Only identifiers, numbers and double-quoted strings are checked. The word stemmer is crude.
+- The default thresholds (0.8, 0.5, 0.4, minimum 1 valid citation) are untuned guesses. Tune them with labeled data.
+- Phase 3 already drops unknown evidence IDs, so invented locations written inside claim text are the main fabrication this phase catches.
+- Counts from the log are automatic checks. The `human_label` field exists for manual labeling later.
+- Phase 4 part 2 (graph-expanded retrieval) is not built, so validation covers search-based evidence only.
+
+
+## Phase 6: Bug investigation and test generation
+
+Run: `streamlit run app/main.py`, then open **Bug investigation**. CLI: `python scripts\investigate.py --repo data\bug_sample --traceback-file data\bug_sample\traceback.txt` (add `--mock` for no model, `--verify` to run the draft test in the sandbox).
+
+### What it does
+- Parses a Python or pytest traceback into frames and maps each to an indexed symbol. Library frames, unknown files, ambiguous paths and lines that differ from the index are refused with a reason, never guessed.
+- Gathers evidence with the reason each excerpt was chosen: the failing frame, calling frames, one test frame, Phase 4 confirmed callers and callees, and related existing tests.
+- Asks the model for a root-cause hypothesis in the Phase 3 format and validates it with Phase 5 (citations, claim support, evidence level). A fix is proposed only if a hypothesis claim passed validation.
+- The fix is SEARCH/REPLACE blocks that must match exactly once, are applied in memory, and are shown as a diff computed with `difflib`. Limits: 3 edits, 40 changed lines, only files shown as evidence, never test files, the patched file must parse, and no newly introduced risky constructs. It is labeled PROPOSED, NOT VERIFIED.
+- The regression test is a draft written to a NEW file under `tests/` (the path is forced), refused if it imports network, process or file-removal modules or calls `eval`/`exec`. It is labeled DRAFT, NOT RUN.
+- On request, the sandbox runs the draft test on the current code and again with the fix, and a verdict is decided from the real pytest output (see the table below).
+
+### Verdicts
+| Verdict | Meaning |
+|---|---|
+| verified | draft test failed before (with the reported exception) and passes after; related tests that passed still pass |
+| fix_ineffective | draft test still fails or errors after the fix |
+| regression | a related test passed before and fails after |
+| test_not_reproducing | draft test passes on the current code |
+| different_failure | draft fails before, but its output never mentions the reported exception |
+| test_broken | draft errors before the fix |
+| inconclusive | timeout, sandbox error, no readable summary, or the fix no longer applies |
+| not_run | no fix or test to run, or the MOCK provider |
+
+### Sandbox (what is and is not achievable on Windows)
+- A temporary copy of only the files the Phase 1 scanner keeps (no `.env`, keys, venvs, `.git`). The project folder is never the working directory.
+- A minimal environment (no host variables), `-E -s -B` Python flags, pinned pytest root, stdin closed, a timeout that kills the whole process tree, and capped output.
+- A best-effort Python audit-hook guard inside the child process refuses file access outside the copy, sockets, name lookups, links and starting programs. It is NOT a security boundary: native code (ctypes) and interpreter attacks can bypass it, and tests run in the same process as pytest, so a hostile test could forge a result.
+- Not achievable without Docker or Job Objects: CPU and memory limits, a real network namespace, a separate filesystem. Docker or a virtual machine is the recommended next step for untrusted code.
+
+### Decisions
+- A hypothesis explains why a failure happens and is validated with evidence; a fix is a code change and is only called verified when a real test run supports it.
+- "Verified" means exactly the table row above. The test is model-written and may encode the wrong behavior.
+- The MOCK provider writes no fix or test, so nothing is verified.
+
+### Known limitations (Phase 6)
+- Python tracebacks only. Frames in files that are not indexed are refused.
+- Small local models often fail the exact-match SEARCH rule. A rejected fix is the safe outcome.
+- Related-test selection is a scored heuristic (confirmed graph callers, file name, name mention).
+- The repository's third-party packages must be installed in the app's virtual environment, because the sandbox uses it.
+- No CPU or memory limits; only the timeout applies.
+- Verified on the `bug_sample` repository only.
