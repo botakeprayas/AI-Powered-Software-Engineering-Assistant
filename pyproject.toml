@@ -2,7 +2,12 @@
 line-length = 100
 target-version = "py310"
 src = ["."]
-extend-exclude = ["data/sample_repo", "data/graph_sample", "data/bug_sample"]
+extend-exclude = [
+    "data/sample_repo",
+    "data/graph_sample",
+    "data/bug_sample",
+    "data/impact_sample",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
