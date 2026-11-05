@@ -1,13 +1,15 @@
 import os
 import shutil
 import subprocess
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from core.impact.signals import CombinedSignals, GitSignals, NoSignals, RuffSignals
 
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
-OLD_DATE = "2020-01-01T12:00:00 +0000"
+_OLD = datetime.now(timezone.utc) - timedelta(days=400)
+OLD_DATE = _OLD.strftime("%Y-%m-%dT%H:%M:%S +0000")
 
 
 def git(root, *args, date=None):
@@ -49,7 +51,7 @@ def test_churn_counts_recent_commits_per_file(history):
 
 @needs_git
 def test_a_longer_window_counts_older_commits(history):
-    assert GitSignals(history, days=100_000).churn("a.py") == 2
+    assert GitSignals(history, days=800).churn("a.py") == 2
 
 
 @needs_git

@@ -43,6 +43,7 @@ from core.settings import DEFAULT_ENV_FILE
 STATUS_CHANGED = "changed"
 PRIORITY = {STATUS_CHANGED: 0, KNOWN: 1, INFERRED: 2}
 NAME_MATCH_DEPTH = 9
+MAX_CHURN_DAYS = 3650  # ten years; very long windows are rejected
 TRUE_WORDS = frozenset({"1", "true", "yes", "on"})
 FALSE_WORDS = frozenset({"0", "false", "no", "off"})
 
@@ -70,8 +71,8 @@ class ImpactConfig:
     use_ruff: bool = True
 
     def __post_init__(self) -> None:
-        if self.churn_days < 1:
-            raise ValueError("IMPACT_CHURN_DAYS must be at least 1.")
+        if not 1 <= self.churn_days <= MAX_CHURN_DAYS:
+            raise ValueError(f"IMPACT_CHURN_DAYS must be between 1 and {MAX_CHURN_DAYS}.")
 
 
 def _whole(name: str, default: int) -> int:
@@ -297,7 +298,8 @@ def _recommend(
         short = unit.qualname.rsplit(".", 1)[-1]
         if is_test_path(unit.file) and not unit.is_module_level and short.startswith("test"):
             test_id = f"{unit.file}::{unit.qualname.replace('.', '::')}"
-            put(RecommendedTest(test_id, STATUS_CHANGED, "this test is edited by the diff", unit.file))
+            reason = "this test is edited by the diff"
+            put(RecommendedTest(test_id, STATUS_CHANGED, reason, unit.file))
     for impact in impacts:
         name = impact.unit.qualname
         for status, deps in ((KNOWN, impact.traversal.known_tests),
@@ -362,7 +364,8 @@ def analyze_impact(
         churn = churn_by_file[unit.file]
         symbol = context.symbols.get(unit.key)
         signature = _signature_line(symbol)
-        changed_signature = bool(unit.whole) or (signature is not None and signature in unit.touched)
+        edited_definition = signature is not None and signature in unit.touched
+        changed_signature = bool(unit.whole) or edited_definition
         factors = [
             dependents_factor(len(known), len(inferred)),
             position_factor(

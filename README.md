@@ -258,3 +258,28 @@ Run: `streamlit run app/main.py`, then open **Bug investigation**. CLI: `python 
 - The repository's third-party packages must be installed in the app's virtual environment, because the sandbox uses it.
 - No CPU or memory limits; only the timeout applies.
 - Verified on the `bug_sample` repository only.
+
+## Phase 7: Change-impact analysis
+
+Run: `streamlit run app/main.py`, then open **Change impact**. CLI: `python scripts\impact.py --repo data\impact_sample --diff-file change.diff` (`--no-git`, `--no-ruff`, `--depth N`, `--base auto|old|new`, `--expect-files a.py,b.py`, `--expect-tests ...`).
+
+### What it does
+- Parses a unified diff (git diff or diff -u) into files, hunks and change blocks, then checks it against the indexed file text (the version before the change, or the version that already has it). A diff that matches neither is refused, not mapped by line number.
+- Maps changed lines to the innermost function or class, or to module-level code. Deleted and renamed files change every symbol in the file.
+- Traverses the Phase 4 graph. **Known** dependents are reached over confirmed edges only. **Inferred** dependents need at least one uncertain edge (for example `printer.show(x)` with several possible targets). They are listed separately and never mixed.
+- Ranks changed code with six visible factors (dependents, graph position, test reach, git churn, Ruff findings, change size) and shows the points and a plain explanation for each. Factors that cannot be computed (no git, no Ruff) are left out and the total is scaled.
+- Reports affected files, recommended tests (closest first) and a pytest command. `--expect-files` and `--expect-tests` compare the predictions with a hand-checked list (recall and precision of the known items).
+
+### Decisions
+- The score is a **heuristic rank** from 0 to 100, labeled as such everywhere. It is not a probability. The weights are judgment calls and have not been calibrated against real defects.
+- Test reach is static reachability over confirmed edges, not measured coverage.
+- Only files in the index are ever opened. A diff naming `.env` or a key file is listed as not indexed and never read.
+- Git and Ruff are optional, run with fixed arguments and timeouts, read only, and never execute repository code.
+
+### Known limitations (Phase 7)
+- Python only, and only code the Phase 1 scanner indexed.
+- Dynamic calls (getattr, callbacks, frameworks, threads) are invisible. A missing item is not proof of safety.
+- The use of module-level variables and constants is not tracked: a changed constant reaches only the files that import its module.
+- A signature edit is detected from the definition line, but which callers must change is not worked out.
+- Churn is per file, and Ruff findings use default rules on the indexed version of the file.
+- Validated on `data/impact_sample` and a few hand-made diffs only. The point values are untuned.

@@ -111,7 +111,8 @@ def test_inferred_impacts_are_kept_apart_from_known_ones():
     assert factor(impact, "Test reach").points == 20
     assert factor(impact, "Dependents").value == "0 known, 1 inferred"
     assert (impact.score, impact.band) == (24, BAND_LOW)
-    assert any("inferred ones come from calls on objects of unknown type" in n for n in impact.notes)
+    wanted = "inferred ones come from calls on objects of unknown type"
+    assert any(wanted in n for n in impact.notes)
     assert any("No test reaches" in n for n in impact.notes)
 
 
@@ -218,4 +219,11 @@ def test_config_rejects_bad_values(monkeypatch, name, value):
         monkeypatch.delenv(env_name, raising=False)
     monkeypatch.setenv(name, value)
     with pytest.raises(ValueError, match="IMPACT_"):
+        load_impact_config(env_file=None)
+        
+def test_a_churn_window_longer_than_ten_years_is_rejected(monkeypatch):
+    for env_name in ENV_NAMES:
+        monkeypatch.delenv(env_name, raising=False)
+    monkeypatch.setenv("IMPACT_CHURN_DAYS", "5000")
+    with pytest.raises(ValueError, match="IMPACT_CHURN_DAYS"):
         load_impact_config(env_file=None)
