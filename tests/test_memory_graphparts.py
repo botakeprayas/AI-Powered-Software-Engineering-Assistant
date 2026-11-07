@@ -4,8 +4,12 @@ import json
 import pytest
 
 from core.graph.analyzer import collect_imports, module_assigned_names, package_parts_for
-from core.memory.graphparts import MemoryIndexError, imports_from_json, imports_to_json
-from core.memory.graphparts import interface_hash
+from core.memory.graphparts import (
+    MemoryIndexError,
+    imports_from_json,
+    imports_to_json,
+    interface_hash,
+)
 from core.memory.indexer import load_graph, scan_order_key
 from core.memory.models import FileState
 from core.memory.store import MemoryStore

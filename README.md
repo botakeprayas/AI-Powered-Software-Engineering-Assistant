@@ -283,3 +283,30 @@ Run: `streamlit run app/main.py`, then open **Change impact**. CLI: `python scri
 - A signature edit is detected from the definition line, but which callers must change is not worked out.
 - Churn is per file, and Ruff findings use default rules on the indexed version of the file.
 - Validated on `data/impact_sample` and a few hand-made diffs only. The point values are untuned.
+
+## Phase 8: Commit-aware repository memory
+
+Run: `streamlit run app/main.py`, then open **Repository memory**. CLI: `python scripts\memory.py status|update|ask|history --repo .` (`--policy update|warn|block`, `--reuse`, `--no-embeddings`, `--full`).
+
+### What it does
+- Identifies a version by commit hash (read through the git command line), a dirty-working-tree flag and a digest of the indexed file contents. Versions live in SQLite (`data/indexes/memory-<hash>.db`, git-ignored).
+- Detects added, modified, deleted and renamed files by comparing per-file content hashes with the stored manifest. Git's rename report is a hint, used only where it agrees with the files.
+- Updates incrementally: only changed files are parsed, unchanged symbols reuse their vectors (the Phase 2 content-hash cache), and graph edges are stored per file. They are reused per file only while no interface (definitions, imports, module variables) changed and no file was added, deleted or renamed. Otherwise every file's edges are re-resolved, because an unchanged file's edges can depend on other files.
+- Freshness levels: `fresh`, `behind` (HEAD moved but the indexed content is identical), `stale` (the content differs), `not_indexed`.
+- Stale policy: `update` (refresh, then answer), `warn` (answer from the old version with a loud warning), `block` (refuse). A `behind` index never blocks.
+- Every answer records the version it was based on (commit, dirty flag, content digest, label), and every citation records it too, in the answer history and in the evaluation log (`version` and `citations_versioned`).
+- When the indexed content changes, older answers are marked OUTDATED. They stay visible for audit and are never served as current. Stored answers can be reused only for identical content, question, LLM and settings.
+- The retrieval cache belongs to one index version and is dropped with it. If the vectors cannot be updated (for example the embedding model fails), answering is blocked.
+
+### Decisions
+- The commit hash alone cannot identify the indexed content (the index is built from the working tree), so the content digest is part of the version.
+- git by subprocess, not GitPython: no new dependency, the same git calls Phase 7 makes, and fewer Windows handle problems.
+- The memory service keeps its own vector cache so other pages that sync the Phase 2 index cannot change the evidence behind a stored version.
+
+### Known limitations (Phase 8)
+- Python files only. A change to other files moves HEAD (`behind`) but reprocesses nothing.
+- A freshness check reads and hashes every kept Python file (no parsing).
+- Reuse ignores changes outside the settings fingerprint (embedding model name and QA settings).
+- The full graph mode re-parses unchanged files. The update report says so.
+- A history rewrite that drops the indexed commit makes git unable to report renames. Renames then use identical content.
+- Verified on `data/impact_sample` copies and throwaway git repositories only.

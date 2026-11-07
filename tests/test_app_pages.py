@@ -13,6 +13,7 @@ PAGES = {
     "pages/4_Graph_chat.py": "Graph chat",
     "pages/5_Bug_investigation.py": "Bug investigation",
     "pages/6_Change_impact.py": "Change impact",
+    "pages/7_Repository_memory.py": "Repository memory",
 }
 
 
@@ -29,7 +30,14 @@ def test_every_page_renders_its_title_without_errors(page, title):
     assert [t.value for t in at.title] == [title]
 
 
-@pytest.mark.parametrize("page", ["pages/5_Bug_investigation.py", "pages/6_Change_impact.py"])
+@pytest.mark.parametrize(
+    "page",
+    [
+        "pages/5_Bug_investigation.py",
+        "pages/6_Change_impact.py",
+        "pages/7_Repository_memory.py",
+    ],
+)
 def test_the_newer_pages_show_their_controls_before_a_repository_is_loaded(page):
     at = load(page)
     assert [b.label for b in at.sidebar.button] == ["Load repository"]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 from memory_helpers import copy_sample
@@ -18,6 +19,12 @@ ALL_FILES = [
     "tests/test_checkout.py", "tests/test_invoice.py", "tests/test_rates.py",
     "tools/formatting.py",
 ]
+
+
+def parseable(root, paths):
+    """The files that have content. An empty file is recorded but never parsed for the
+    graph (exactly as in the Phase 4 builder), so this is what the parse spy should see."""
+    return sorted(p for p in paths if (Path(root) / p).read_bytes().strip())
 
 
 def scratch(root):

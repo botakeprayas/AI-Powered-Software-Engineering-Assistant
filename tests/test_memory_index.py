@@ -5,6 +5,7 @@ from memory_e2e_helpers import (
     assert_matches_scratch,
     canonical,
     indexed,
+    parseable,
     scratch,
 )
 from memory_helpers import copy_sample, edit, write
@@ -61,7 +62,9 @@ def test_the_first_index_equals_a_from_scratch_build(tmp_path, spy):
     box = indexed(tmp_path)
     update = box.first
     assert update.first_index and update.created_version and update.graph_mode == "full"
-    assert sorted(spy["extract"]) == ALL_FILES and sorted(spy["parse"]) == ALL_FILES
+    assert sorted(spy["extract"]) == ALL_FILES
+    # an empty file (such as an empty __init__.py) is recorded but never parsed, as in Phase 4
+    assert sorted(spy["parse"]) == parseable(box.root, ALL_FILES)
     assert update.symbols_total == 15 and len(update.graph_files_recomputed) == 12
     assert update.version.commit_hash is None and update.version.label.startswith("files:")
     assert (update.version.file_count, update.version.symbol_count) == (12, 15)
@@ -135,6 +138,7 @@ def test_adding_a_file_extracts_only_it_but_the_graph_is_resolved_again(
     tmp_path, fake_embedder, spy
 ):
     box = indexed(tmp_path, fake_embedder)
+    old_parsed = len(parseable(box.root, ALL_FILES))
     forget(spy)
     write(box.root, NEW_FILE, STOCK)
     update = box.indexer.update(fake_embedder, semantic_db=box.db)
@@ -143,8 +147,9 @@ def test_adding_a_file_extracts_only_it_but_the_graph_is_resolved_again(
     assert update.symbols_extracted == 1 and update.symbols_total == 16
     assert update.semantic.embedded == 1 and update.semantic.reused == 15
     assert update.graph_mode == "full" and "added, deleted or renamed" in update.graph_reason
-    assert sorted(spy["parse"]) == sorted([*ALL_FILES, NEW_FILE])
-    assert (update.graph_files_parsed, update.graph_files_reparsed) == (13, 12)
+    assert sorted(spy["parse"]) == parseable(box.root, [*ALL_FILES, NEW_FILE])
+    graph_counts = (update.graph_files_parsed, update.graph_files_reparsed)
+    assert graph_counts == (old_parsed + 1, old_parsed)
     assert_matches_scratch(box.store, box.root)
 
 
@@ -183,7 +188,8 @@ def test_deleting_a_file_removes_its_data_and_embeds_nothing(tmp_path, fake_embe
     assert fake_embedder.texts_embedded == before
     assert update.symbols_total == 14 and update.graph_mode == "full"
     assert path not in box.store.manifest()
-    assert box.store.conn.execute("SELECT 1 FROM symbols WHERE file = ?", (path,)).fetchone() is None
+    remaining = box.store.conn.execute("SELECT 1 FROM symbols WHERE file = ?", (path,))
+    assert remaining.fetchone() is None
     assert not load_graph(box.store).has_node(path)
     assert_matches_scratch(box.store, box.root)
 
